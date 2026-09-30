@@ -26,7 +26,7 @@ row_num = len(sold_filtered)
 print("Number of rows after filtering for Residential:", row_num)
 
 #send to new csv
-sold_filtered.to_csv('sold_filtered.csv', index = False)
+sold_filtered.to_csv('data/sold_filtered.csv', index = False)
 
 
 
@@ -53,4 +53,4 @@ row_num = len(listing_filtered)
 print("Number of rows after filtering for Residential:", row_num)
 
 #send to new csv
-listing_filtered.to_csv('listing_filtered.csv', index = False)
+listing_filtered.to_csv('data/listing_filtered.csv', index = False)
