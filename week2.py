@@ -6,10 +6,6 @@ import os
 import matplotlib.pyplot as plt
 
 
-# %% [markdown]
-# • Separate market analysis fields from metadata fields
-# identify extreme outliers for later handling
-
 # %%
 #load the data ensuring data types are kept
 sold = pd.read_csv("sold_filtered.csv", low_memory = False)
@@ -110,19 +106,9 @@ print(null_pct)
 flagged_cols = null_pct[null_pct > 90].index.tolist()
 print(flagged_cols)
 
-#drop columns >90% missing
-sold = sold.drop(columns=flagged_cols)
 
 # %%
-#considering which extra columns to drop. 50% or greater NA is up for debate
-# sus_cols = null_pct[null_pct > 50].index.tolist()
-# print(sus_cols)
-
-#none of these are key fields and are mostly metadata.
-
-# %%
-#drop columns >50% missing
-# sold = sold.drop(columns=sus_cols)
+sold = sold.drop(columns= 'PropertyType')
 
 # %%
 sold.shape
@@ -212,9 +198,6 @@ print(null_pct)
 #flagging columns >90% missing
 flagged_cols = null_pct[null_pct > 90].index.tolist()
 print(flagged_cols)
-
-# %%
-listing = listing.drop(columns = flagged_cols)
 
 # %%
 #send to new csv
