@@ -1,169 +1,249 @@
-
+# %% [markdown]
+# 
+# Tasks
+# Remove unnecessary or redundant columns
+# Handle missing values appropriately
+# Ensure numeric fields are properly typed
+# 
+# 
+# Submit a cleaned, analysis-ready dataset as a CSV, plus a .py script documenting every transformation made and why. Include before/after row counts, data type confirmations, date consistency flag counts, and a geographic data quality summary noting any invalid coordinate records.
+# 
+# 
 
 # %%
 import pandas as pd
 
 # %%
-df = pd.read_csv('data/sold_filtered_3.csv', low_memory = False)
+sold = pd.read_csv('data/sold_filtered_3.csv', low_memory = False)
+listing = pd.read_csv('data/listing_filtered_3.csv', low_memory = False)
 
 # %%
-df.shape
+print("sold dimensions:", sold.shape, "     listing dimensions:", listing.shape)
+
+# %% [markdown]
+# ### Date Conversion and Consistency
 
 # %%
-#convert all date columns from strings to datetime
-dates = ['CloseDate','ContractStatusChangeDate','PurchaseContractDate','ListingContractDate']
 
-for col in dates:
-    df[col] = pd.to_datetime(df[col], errors='coerce')
+
+def format_dates(df):
+    # Convert all dates from string to datetime
+    
+    dates = ['CloseDate','ContractStatusChangeDate','PurchaseContractDate','ListingContractDate']
+    
+    for col in dates:
+        df[col] = pd.to_datetime(df[col], errors='coerce')
+    return df
+
+# %%
+sold = format_dates(sold)
+listing = format_dates(listing)
+
+# %%
+def column_types(df):
+    # Confirm data types
+    return pd.DataFrame({
+        "column": df.columns,
+        "dtype": df.dtypes.astype(str).values,
+    }).reset_index(drop=True)
+
+# %%
+column_types(sold)
+column_types(listing)
+
+# %% [markdown]
+# I see some duplicate columns are appearing in the listing dataset, so I want to remove those later on.
 
 # %%
 #flag columns with timeline inconsistencies
 
-df['listing_after_close_flag'] = df['ListingContractDate'] > df['CloseDate']
-df['purchase_after_close_flag'] = df['PurchaseContractDate'] > df['CloseDate']
+def timeline_flags(df):
+    
+    df['listing_after_close_flag'] = (
+        df['ListingContractDate'] > df['CloseDate']
+    )
+    df['purchase_after_close_flag'] = (
+        df['PurchaseContractDate'] > df['CloseDate']
+    )
 
-#list after purchase flag
-df['negative_timeline_flag'] = (df['ListingContractDate'] > df['PurchaseContractDate'])
-
-#printing totals for the flagged cols
-print(df[['listing_after_close_flag', 'purchase_after_close_flag', 'negative_timeline_flag']].sum())
+    #flag any entry that violates the correct sequence
+    df['negative_timeline_flag'] = (
+        (df['ListingContractDate'] > df['PurchaseContractDate']) |
+        (df['PurchaseContractDate'] > df['CloseDate']) |
+        (df['ListingContractDate'] > df['CloseDate'])
+    )
+    
+    df['invalid_dom_flag'] = (
+        df['DaysOnMarket'] < 0
+    )
+    
+    return df
 
 # %%
-#flag missing close price
+def flag_summary(df, flag_cols):
+    # Count and percent of rows flagged for each flag column.
+    summary = pd.DataFrame({
+        "n_flagged": df[flag_cols].sum(),
+        "pct_flagged": (df[flag_cols].mean() * 100).round(2),
+    })
+    return summary
 
-df['invalid_closeprice_flag'] = (
-    (df['ClosePrice'] <= 0) | df['ClosePrice'].isna() )
-
-print(df[['invalid_closeprice_flag']].sum())
+flag_cols = ['listing_after_close_flag', 'purchase_after_close_flag', 'negative_timeline_flag', 'invalid_dom_flag']
 
 # %%
-#flag invalid numeric values for house layout
+sold = timeline_flags(sold)
+flag_summary(sold, flag_cols)
 
-df['invalid_house_flag'] = (
-    (df['LivingArea'] <= 0) |
-    (df['BedroomsTotal'] < 0) |
-    (df['BathroomsTotalInteger'] < 0)
-)
+# %%
+listing = timeline_flags(listing)
+flag_summary(listing, flag_cols)
 
-print(df[['invalid_house_flag']].sum())
+# %%
+#flag missing close price only for sold dataset
+
+sold['invalid_closeprice_flag'] = (
+    (sold['ClosePrice'] <= 0) | sold['ClosePrice'].isna() )
+
+print(sold[['invalid_closeprice_flag']].sum())
+
+# %%
+def house_flag(df):    
+    #flag invalid numeric values for house layout
+    df['invalid_house_flag'] = (
+        (df['LivingArea'] <= 0) |
+        (df['BedroomsTotal'] < 0) |
+        (df['BathroomsTotalInteger'] < 0)
+    )
+    
+    return df
+
+# %%
+flag_cols = ['invalid_house_flag']
+
+# %%
+sold = house_flag(sold)
+flag_summary(sold, flag_cols)
+
+# %%
+listing = house_flag(listing)
+flag_summary(listing, flag_cols)
+
+# %% [markdown]
+# ### Geographic Data Checks
 
 # %%
 #flag rows with invalid geographic values
 
-df['missing_geo_flag'] = (
-    (df['Latitude'].isna()) |
-    (df['Longitude'].isna()) |
-    (df['Latitude'] == 0) |
-    (df['Longitude'] == 0)
-)
-df['outofbounds_flag'] = (
-    (df['Latitude'] < 32) | 
-    (df['Latitude'] > 42) |
-    (df['Longitude'] < -125) |
-    (df['Longitude'] > -114) |
-    (df['StateOrProvince'] != 'CA')
-)
+def geo_check(df):
+    df['missing_geo_flag'] = (
+        (df['Latitude'].isna()) |
+        (df['Longitude'].isna()) |
+        (df['Latitude'] == 0) |
+        (df['Longitude'] == 0)
+    )
+    #flag for explicitly outside of california
+    df['outofbounds_flag'] = (
+        (df['Latitude'] < 32) | 
+        (df['Latitude'] > 42) |
+        (df['Longitude'] < -125) |
+        (df['Longitude'] > -114) |
+        (df['StateOrProvince'] != 'CA')
+    )
+    return df
 
-print(df[['missing_geo_flag']].sum())
-print(df[['outofbounds_flag']].sum())
+# %%
+flag_cols = ['outofbounds_flag','missing_geo_flag']
+
+# %%
+sold = geo_check(sold)
+flag_summary(sold, flag_cols)
+
+# %%
+listing = geo_check(listing)
+flag_summary(listing, flag_cols)
 
 # %%
 #counting % nulls per column
-null_pct = df.isna().mean() * 100
+sold_null_pct = sold.isna().mean() * 100
 
-null_pct.to_frame(name='pct_null')
-null_pct = null_pct.sort_values(ascending=False)
-
-
-# %%
+sold_null_pct.to_frame(name='pct_null')
+sold_null_pct = sold_null_pct.sort_values(ascending=False)
 
 
 # %%
+#counting % nulls per column
+listing_null_pct = listing.isna().mean() * 100
 
-
-# %%
-
+listing_null_pct.to_frame(name='pct_null')
+listing_null_pct = listing_null_pct.sort_values(ascending=False)
 
 # %% [markdown]
-# Making a cleaned df dataset while dropping some high missing columns, imputing some missing values, and removing columns not to be used for analysis. columns missing >70% of data had little information that was not already covered by similar categories.
+# ### Removing unnecessary or redundant columns
+
+# %% [markdown]
+# Many categorical, metadata, and high missing columns won't be conductive to analysis. Checking rows >70% missing, much of this data is covered by other columns (latfilled, lonfilled, Highschool) or not paramount to analysis (compensation and names of colist agents).
 
 # %%
-df_imp = df
+sold_clean = sold
+listing_clean = listing
 
 # %%
-#removing columns over 70% missing
-over70_cols = null_pct[null_pct > 70].index.tolist()
+# removing duplicated columns from listing data
+listing_clean = listing_clean.drop(list(listing_clean.filter(regex='.1')), axis=1)
 
 # %%
-df_imp = df_imp.drop(columns= over70_cols)
+#removing sold columns over 70% missing
+over70_cols = sold_null_pct[sold_null_pct > 70].index.tolist()
 
 # %%
-#remove 3 rows missing close price
-df_imp = df_imp[df_imp['invalid_closeprice_flag'] == 0]
+#manually checking columns to confirm no important key fields are included
+print(sold_null_pct[over70_cols])
 
 # %%
-#remove 103 rows with latlong outside CA or state not CA 
-df_imp = df_imp[df_imp['outofbounds_flag']==0]
+listing_null_pct
 
 # %%
-print(df.shape)
-print(df_imp.shape)
+sold_clean = sold_clean.drop(columns= over70_cols)
 
 # %%
-#Impute the mean for living area, bedrooms, bathrooms when missing or invalid
-invalid_rules = {
-    'LivingArea': df_imp['LivingArea'] <= 0,
-    'BedroomsTotal': df_imp['BedroomsTotal'] < 0,
-    'BathroomsTotalInteger': df_imp['BathroomsTotalInteger'] < 0,
-}
-
-for col, invalid in invalid_rules.items():
-    good = df_imp[col].where(~invalid)     # invalid values become NaN
-    mean_val = good.mean()                   # mean() skips NaN, so only valid values count
-    df_imp[col] = good.fillna(mean_val)    # fills invalid aand originally missing values
-
-    print(col, "| mean used:", round(mean_val, 2), "| replaced:", invalid.sum())
-
-#rounding bedrooms and bathrooms    
-for col in ['BedroomsTotal', 'BathroomsTotalInteger']:
-    df_imp[col] = df_imp[col].round()
+#removing listing columns over 75% missing ONLY after manually confirming key fields are in tact
+l_over75_cols = listing_null_pct[listing_null_pct > 75].index.tolist()
 
 # %%
-
-#assuming that missing on yes/no category means "no"
-
-yn_cols = ["PoolPrivateYN", "ViewYN", "NewConstructionYN"]
-
-# Flag which rows were originally blank
-for col in yn_cols:
-    df_imp[col + "_was_missing"] = df_imp[col].isna()
-
-df_imp[yn_cols] = df_imp[yn_cols].fillna(False)
+listing_clean = listing_clean.drop(columns= l_over75_cols)
 
 # %%
-#imputing missing stories with median of each subtype
+#remove 3 rows from sold missing close price
+sold_clean = sold_clean[sold_clean['invalid_closeprice_flag'] == 0]
 
-df_imp["Stories_was_missing"] = df_imp["Stories"].isna()
-
-# Median within each property type
-df_imp["Stories"] = df_imp["Stories"].fillna(
-    df_imp.groupby("PropertySubType")["Stories"].transform("median")
-)
-
-#any property type with no stories data at all gets the overall median
-df_imp["Stories"] = df_imp["Stories"].fillna(df_imp["Stories"].median())
 
 # %%
-print(df_imp[["PoolPrivateYN", "ViewYN", "NewConstructionYN", "Stories"]].isna().sum())
+# removing listings from both datasets where home layout is invalid or missing
+
+def remove_invalid_layouts(df):
+    df = df[df['invalid_house_flag'] == 0]
+    return df
 
 # %%
-#recounting % nulls per column
-null_new = df_imp.isna().mean() * 100
-
-null_new.to_frame(name='pct_null')
-null_new = null_new.sort_values(ascending=False)
+sold_clean = remove_invalid_layouts(sold_clean)
 
 # %%
-null_new.head(60)
+print("Dimensions of sold data before cleaning:", sold.shape)
+print("Dimensions of sold data after cleaning:",sold_clean.shape)
+
+# %%
+listing_clean = remove_invalid_layouts(listing_clean)
+
+# %%
+print("Dimensions of listing data before cleaning:", listing.shape)
+print("Dimensions of listing data after cleaning:",listing_clean.shape)
+
+# %%
+#send to new csv
+sold_clean.to_csv('data/sold_clean.csv', index = False)
+
+# %%
+#send to new csv
+listing_clean.to_csv('data/listing_clean.csv', index = False)
 
 
